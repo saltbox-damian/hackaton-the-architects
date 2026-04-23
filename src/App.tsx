@@ -1,46 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type AuthStatus } from './api';
 import { LoginGate } from './components/LoginGate';
 import { Dashboard } from './components/Dashboard';
 
 export default function App() {
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [status, setStatus] = useState<AuthStatus | null>(null);
+  const [forceGate, setForceGate] = useState(false);
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const err = url.searchParams.get('auth_error');
-    if (err) {
-      setAuthError(err);
-      url.searchParams.delete('auth_error');
-      window.history.replaceState({}, '', url.toString());
+  const refresh = useCallback(async () => {
+    try {
+      const s = await api.status();
+      setStatus(s);
+    } catch {
+      setStatus({ source: null, target: null });
     }
-    api.status().then(setAuth).catch(() => setAuth({ authenticated: false }));
   }, []);
 
-  const handleLogout = async () => {
-    try {
-      await api.logout();
-    } catch {
-      // ignore
-    }
-    setAuth({ authenticated: false });
-  };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  if (auth === null) {
+  if (status === null) {
     return <div className="boot">Loading…</div>;
   }
 
-  if (!auth.authenticated) {
+  const anyConnected = Boolean(status.source || status.target);
+
+  if (!anyConnected || forceGate) {
     return (
       <LoginGate
-        authError={authError}
-        onCliConnected={() => {
-          api.status().then(setAuth).catch(() => setAuth({ authenticated: false }));
-        }}
+        status={status}
+        onChange={refresh}
+        onEnter={() => setForceGate(false)}
       />
     );
   }
 
-  return <Dashboard auth={auth} onLogout={handleLogout} />;
+  return (
+    <Dashboard status={status} onChange={refresh} onManageOrgs={() => setForceGate(true)} />
+  );
 }

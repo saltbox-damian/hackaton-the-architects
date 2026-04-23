@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { api, type AuthStatus, type OrgRole, type OrgSlot } from '../api';
 
 type Props = {
-  authError?: string | null;
-  onCliConnected: () => void;
+  status: AuthStatus;
+  onChange: () => void | Promise<void>;
+  onEnter: () => void;
 };
 
 type CliErrorDetail = {
@@ -13,25 +15,83 @@ type CliErrorDetail = {
   stderr?: string;
 };
 
-export function LoginGate({ authError, onCliConnected }: Props) {
+const ROLE_META: Record<OrgRole, { label: string; sub: string }> = {
+  source: { label: 'Source Org', sub: 'The org content is migrated FROM' },
+  target: { label: 'Target Org', sub: 'The org content is migrated TO' },
+};
+
+export function LoginGate({ status, onChange, onEnter }: Props) {
+  const bothConnected = Boolean(status.source && status.target);
+
+  return (
+    <div className="gate">
+      <div className="gate__card">
+        <h1 className="gate__title">CMS Migration Architects</h1>
+        <p className="gate__subtitle">
+          Connect the two Salesforce orgs to compare CMS channels and content with the AI
+          assistant.
+        </p>
+
+        <div className="gate__slots">
+          <OrgSlotCard role="source" slot={status.source} onChange={onChange} />
+          <OrgSlotCard role="target" slot={status.target} onChange={onChange} />
+        </div>
+
+        <div className="gate__footer">
+          <button
+            type="button"
+            className="btn btn--primary btn--large"
+            disabled={!bothConnected}
+            onClick={onEnter}
+          >
+            {bothConnected ? 'Open Architects →' : 'Connect both orgs to continue'}
+          </button>
+          {!bothConnected && (status.source || status.target) && (
+            <p className="gate__hint">
+              You can also start with just one org connected — the assistant will tell you when it
+              needs the other.
+              <button
+                type="button"
+                className="gate__linkbtn"
+                onClick={onEnter}
+              >
+                Continue anyway
+              </button>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrgSlotCard({
+  role,
+  slot,
+  onChange,
+}: {
+  role: OrgRole;
+  slot: OrgSlot | null;
+  onChange: () => void | Promise<void>;
+}) {
   const [loginUrl, setLoginUrl] = useState('https://login.salesforce.com');
   const [busy, setBusy] = useState(false);
-  const [cliError, setCliError] = useState<CliErrorDetail | null>(null);
+  const [err, setErr] = useState<CliErrorDetail | null>(null);
   const [showDetail, setShowDetail] = useState(false);
 
-  const handleCli = async () => {
+  const handleConnect = async () => {
     setBusy(true);
-    setCliError(null);
+    setErr(null);
     setShowDetail(false);
     try {
       const res = await fetch('/api/sf/cli/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ loginUrl }),
+        body: JSON.stringify({ role, loginUrl }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setCliError({
+        setErr({
           message: data?.error ?? `HTTP ${res.status}`,
           command: data?.command,
           exitCode: data?.exitCode,
@@ -40,85 +100,112 @@ export function LoginGate({ authError, onCliConnected }: Props) {
         });
         return;
       }
-      onCliConnected();
-    } catch (err) {
-      setCliError({ message: (err as Error).message });
+      await onChange();
+    } catch (e) {
+      setErr({ message: (e as Error).message });
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <div className="login">
-      <div className="login__card">
-        <h2>Connect Salesforce</h2>
-        <p>
-          Monitor <code>B2B_Media_Relation__c</code> processing — status counts, error details,
-          batch jobs, and retries.
-        </p>
-        {authError && <div className="login__error">{authError}</div>}
+  const handleDisconnect = async () => {
+    setBusy(true);
+    try {
+      await api.logout(role);
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
 
-        <div className="login__section">
-          <h3>Option A — SFDX CLI (no Connected App needed)</h3>
-          <p className="login__hint">
-            Opens Salesforce login in your browser via <code>sf org login web</code>. The CLI must
-            be installed and logged-in user must have access to the target org.
-          </p>
-          <label className="login__field">
+  const meta = ROLE_META[role];
+
+  return (
+    <div className={`slot slot--${role} ${slot ? 'slot--connected' : ''}`}>
+      <header className="slot__header">
+        <div>
+          <div className="slot__label">{meta.label}</div>
+          <div className="slot__sub">{meta.sub}</div>
+        </div>
+        <span className={`slot__badge slot__badge--${slot ? 'on' : 'off'}`}>
+          {slot ? 'Connected' : 'Not connected'}
+        </span>
+      </header>
+
+      {slot ? (
+        <div className="slot__body">
+          <div className="slot__row">
+            <span className="slot__k">Instance</span>
+            <a href={slot.instanceUrl} target="_blank" rel="noreferrer" className="slot__v">
+              {new URL(slot.instanceUrl).host}
+            </a>
+          </div>
+          {slot.username && (
+            <div className="slot__row">
+              <span className="slot__k">User</span>
+              <span className="slot__v">{slot.username}</span>
+            </div>
+          )}
+          {slot.cliAlias && (
+            <div className="slot__row">
+              <span className="slot__k">Alias</span>
+              <span className="slot__v mono">{slot.cliAlias}</span>
+            </div>
+          )}
+          <button
+            type="button"
+            className="btn btn--ghost slot__action"
+            onClick={handleDisconnect}
+            disabled={busy}
+          >
+            {busy ? 'Disconnecting…' : 'Disconnect'}
+          </button>
+        </div>
+      ) : (
+        <div className="slot__body">
+          <label className="slot__field">
             <span>Login URL</span>
-            <select value={loginUrl} onChange={(e) => setLoginUrl(e.target.value)} disabled={busy}>
-              <option value="https://login.salesforce.com">
-                Production / Developer Edition
-              </option>
+            <select
+              value={loginUrl}
+              onChange={(e) => setLoginUrl(e.target.value)}
+              disabled={busy}
+            >
+              <option value="https://login.salesforce.com">Production / Developer Edition</option>
               <option value="https://test.salesforce.com">Sandbox</option>
             </select>
           </label>
-          {cliError && (
-            <div className="login__error">
-              <div>{cliError.message}</div>
-              {(cliError.command || cliError.stdout || cliError.stderr) && (
+          {err && (
+            <div className="slot__error">
+              <div>{err.message}</div>
+              {(err.command || err.stdout || err.stderr) && (
                 <button
                   type="button"
-                  className="login__detail-toggle"
+                  className="slot__linkbtn"
                   onClick={() => setShowDetail((v) => !v)}
                 >
                   {showDetail ? 'Hide details' : 'Show full log'}
                 </button>
               )}
               {showDetail && (
-                <pre className="login__detail">
-                  {cliError.command && `$ ${cliError.command}\n`}
-                  {cliError.exitCode !== undefined && `exit code: ${cliError.exitCode}\n`}
-                  {cliError.stdout && `\n--- stdout ---\n${cliError.stdout}`}
-                  {cliError.stderr && `\n--- stderr ---\n${cliError.stderr}`}
+                <pre className="slot__detail">
+                  {err.command && `$ ${err.command}\n`}
+                  {err.exitCode !== undefined && `exit code: ${err.exitCode}\n`}
+                  {err.stdout && `\n--- stdout ---\n${err.stdout}`}
+                  {err.stderr && `\n--- stderr ---\n${err.stderr}`}
                 </pre>
               )}
             </div>
           )}
-          <button className="login__button" onClick={handleCli} disabled={busy}>
-            {busy ? 'Waiting for browser login…' : 'Connect via SFDX CLI'}
+          <button
+            type="button"
+            className="btn btn--primary slot__action"
+            onClick={handleConnect}
+            disabled={busy}
+          >
+            {busy ? 'Waiting for browser login…' : `Connect ${meta.label} via SFDX CLI`}
           </button>
-          {busy && (
-            <p className="login__hint">
-              A browser window should open to Salesforce. Complete the login there; this page will
-              refresh automatically.
-            </p>
-          )}
         </div>
-
-        <div className="login__divider">or</div>
-
-        <div className="login__section">
-          <h3>Option B — Connected App (OAuth Web Server)</h3>
-          <p className="login__hint">
-            Requires <code>SF_CLIENT_ID</code>, <code>SF_CLIENT_SECRET</code> in{' '}
-            <code>.env.local</code>. See SETUP.md.
-          </p>
-          <a className="login__button login__button--ghost" href="/api/sf/oauth/login">
-            Log in with Connected App
-          </a>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

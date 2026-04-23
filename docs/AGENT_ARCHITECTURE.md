@@ -1,14 +1,7 @@
-# Content Migration S-Tool (CMS)
-An AI driven cms migration tool.
-
-## Use Case Overview
-As a Release Manager I would like to migrate CMS data and metadata seamlessly between orgs...
-
-- Compare Workspaces between different orgs
-- Migrate Content
-- Forget about it
-
-## Agent Architecture Summary
+<!--
+  Paste the content below directly under the "## Agent Architecture Summary"
+  heading in README.md. Headings start at level 3 so they nest correctly.
+-->
 
 ### Overview
 
@@ -150,70 +143,3 @@ To add a new capability (e.g. *"publish missing content from source into target"
 1. Add a new tool in `lib/ai/tools/salesforce-tools.ts` — use `getAgentSession('target')` and the `composite` helper in `lib/salesforce/client.ts`.
 2. Add the tool name and a routing hint to the `instructions` in `lib/ai/agents/salesforce-agent.ts`.
 3. No UI work needed — tool calls render automatically in the chat, including inputs and outputs for debugging.
-
-## Tools and API used
-
-### AI tools
-- **Claude Code** — used as the coding assistant during development.
-- **Vercel AI SDK** (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`) — agent runtime (`ToolLoopAgent`), streaming transport (`DefaultChatTransport`, `createAgentUIStreamResponse`), and the `useChat` React hook.
-- **Anthropic Claude Sonnet 4.6** (`anthropic/claude-sonnet-4.6`) — the LLM that powers the agent.
-- **Zod** — runtime validation of every tool input schema.
-
-### APIs
-- **Salesforce Connect REST API** (Enhanced CMS Workspaces)
-  - `GET /services/data/v60.0/connect/cms/delivery/channels/{channelId}/contents` — fetch published content for a channel.
-- **Salesforce SOQL REST**
-  - `SELECT Id, Name FROM ManagedContentChannel` — enumerate delivery channels per org.
-- **Salesforce CLI** (`sf org login web`, `sf org display`, `sf org logout`) — dual-org authentication and automatic access-token refresh.
-
-## Set Up and Run instructions
-
-### Prerequisites
-
-- Node.js 20+ and npm
-- [Salesforce CLI](https://developer.salesforce.com/tools/sfdxcli) (`sf`) installed and on your `PATH`
-- Two Salesforce orgs with **Enhanced CMS Workspaces** enabled and at least one `ManagedContentChannel` published in each
-- An Anthropic API key
-
-### 1. Install
-
-```bash
-npm install
-```
-
-### 2. Environment
-
-Create `.env.local` at the repo root:
-
-```
-PORT=8787
-SESSION_SECRET=<32+ random chars — e.g. `openssl rand -base64 48`>
-ANTHROPIC_API_KEY=<your Anthropic API key>
-```
-
-> The SF CLI path does not need a Connected App — it uses the CLI's built-in `PlatformCLI` Connected App.
-
-### 3. Run
-
-```bash
-npm run dev
-```
-
-- Client: http://localhost:5173
-- Server: http://localhost:8787
-
-### 4. Connect two orgs
-
-Open http://localhost:5173. You'll see two "Connect via SFDX CLI" cards — one for **Source**, one for **Target**. Clicking each opens a Salesforce login in your browser. Once both slots are **Connected**, click **Open Architects →**.
-
-### 5. Ask the agent
-
-Try a suggested prompt like *"Which CMS channels exist in source but are missing in target?"* — the agent will chain the appropriate tools and render the diff as a markdown table in the chat.
-
-## Known Limitations
-
-- Content that is not **published** to the delivery channel is not visible to the Connect REST API and therefore invisible to the agent.
-- Comparison is currently **read-only** — the agent reports what's missing but does not yet publish it into the target org.
-- Channels are matched across orgs by `Name`; orgs that use different naming conventions between source and target will not align automatically.
-- The Connect REST API requires API v55.0+; this project pins `v60.0`.
-- A single user session holds both org credentials — multi-user tenancy is out of scope for the hackathon build.

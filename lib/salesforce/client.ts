@@ -98,6 +98,29 @@ export async function soql<T = unknown>(
   return { ...data, session: next };
 }
 
+export async function getJson<T = unknown>(
+  session: SessionPayload,
+  path: string,
+  query?: Record<string, string | number | boolean | undefined | null>,
+): Promise<{ data: T; session: SessionPayload }> {
+  let fullPath = path;
+  if (query) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (v === undefined || v === null || v === '') continue;
+      params.set(k, String(v));
+    }
+    const qs = params.toString();
+    if (qs) fullPath += (path.includes('?') ? '&' : '?') + qs;
+  }
+  const { response, session: next } = await request(session, fullPath);
+  if (!response.ok) {
+    throw new SalesforceApiError(response.status, await readErrors(response));
+  }
+  const data = (await response.json()) as T;
+  return { data, session: next };
+}
+
 export async function patchRecord(
   session: SessionPayload,
   sobject: string,

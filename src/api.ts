@@ -1,33 +1,16 @@
-export type AuthStatus =
-  | { authenticated: false }
-  | { authenticated: true; instanceUrl: string; username?: string; orgId?: string };
+export type OrgRole = 'source' | 'target';
 
-export type StatusOverview = {
-  counts: Record<string, number>;
-  total: number;
-  processType: string | null;
+export type OrgSlot = {
+  instanceUrl: string;
+  username: string | null;
+  orgId: string | null;
+  mode: 'oauth' | 'cli';
+  cliAlias: string | null;
 };
 
-export type ErrorRecord = {
-  Id: string;
-  ContentTitle__c: string | null;
-  ProductSku__c: string | null;
-  MediaGroup__c: string | null;
-  Process_Type__c: string | null;
-  Error_Message__c: string | null;
-  LastModifiedDate: string;
-};
-
-export type BatchJob = {
-  Id: string;
-  ApexClass?: { Name: string } | null;
-  JobType: string;
-  Status: string;
-  CreatedDate: string;
-  CompletedDate: string | null;
-  JobItemsProcessed: number;
-  TotalJobItems: number;
-  NumberOfErrors: number;
+export type AuthStatus = {
+  source: OrgSlot | null;
+  target: OrgSlot | null;
 };
 
 async function json<T>(res: Response): Promise<T> {
@@ -45,25 +28,26 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  status: () => fetch('/api/sf/oauth/status').then(json<AuthStatus>),
-  logout: () => fetch('/api/sf/oauth/logout', { method: 'POST' }).then(json),
-  overview: (processType?: string) =>
-    fetch(`/api/sf/status-overview${processType ? `?processType=${processType}` : ''}`).then(
-      json<StatusOverview>,
-    ),
-  errors: (processType?: string) =>
-    fetch(`/api/sf/errors?limit=50${processType ? `&processType=${processType}` : ''}`).then(
-      json<{ records: ErrorRecord[]; totalSize: number }>,
-    ),
-  jobs: () => fetch('/api/sf/batch-jobs').then(json<{ records: BatchJob[] }>),
-  retry: (ids: string[]) =>
-    fetch('/api/sf/retry', {
+  status: () => fetch('/api/sf/status').then(json<AuthStatus>),
+  cliLogin: (role: OrgRole, loginUrl?: string) =>
+    fetch('/api/sf/cli/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    }).then(json<{ updated: number; results: Array<{ id: string; ok: boolean; error?: string }> }>),
-  seed: () =>
-    fetch('/api/sf/seed', { method: 'POST' }).then(
-      json<{ created: number; failed: number; firstError?: string }>,
+      body: JSON.stringify({ role, loginUrl }),
+    }).then(
+      json<{
+        ok: true;
+        role: OrgRole;
+        instanceUrl: string;
+        username?: string;
+        orgId?: string;
+        alias: string;
+      }>,
     ),
+  logout: (role: OrgRole | 'all' = 'all') =>
+    fetch('/api/sf/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    }).then(json),
 };

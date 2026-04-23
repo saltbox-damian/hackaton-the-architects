@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 const ALGO = 'aes-256-gcm';
 const COOKIE_NAME = 'sf_session';
 
+export type OrgRole = 'source' | 'target';
+
 export type SessionPayload = {
   mode?: 'oauth' | 'cli';
   accessToken: string;
@@ -15,6 +17,11 @@ export type SessionPayload = {
   cliAlias?: string;
 };
 
+export type DualSession = {
+  source?: SessionPayload;
+  target?: SessionPayload;
+};
+
 function getKey(): Buffer {
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -23,7 +30,7 @@ function getKey(): Buffer {
   return crypto.createHash('sha256').update(secret).digest();
 }
 
-export function encryptSession(payload: SessionPayload): string {
+export function encryptSession(payload: DualSession): string {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ALGO, getKey(), iv);
   const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -32,7 +39,7 @@ export function encryptSession(payload: SessionPayload): string {
   return Buffer.concat([iv, tag, ct]).toString('base64url');
 }
 
-export function decryptSession(token: string): SessionPayload | null {
+export function decryptSession(token: string): DualSession | null {
   try {
     const buf = Buffer.from(token, 'base64url');
     if (buf.length < 28) return null;
@@ -42,7 +49,7 @@ export function decryptSession(token: string): SessionPayload | null {
     const decipher = crypto.createDecipheriv(ALGO, getKey(), iv);
     decipher.setAuthTag(tag);
     const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
-    return JSON.parse(pt.toString('utf8')) as SessionPayload;
+    return JSON.parse(pt.toString('utf8')) as DualSession;
   } catch {
     return null;
   }
